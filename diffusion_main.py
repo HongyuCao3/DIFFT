@@ -64,8 +64,8 @@ parser.add_argument('--use_reward', type=int, default=100)
 parser.add_argument('--diff_hidden_size', type=int, default=512)
 parser.add_argument('--diff_num_layers', type=int, default=8)
 parser.add_argument('--diff_num_step', type=int, default=20)
-parser.add_argument('--vae_load_path', type=str, default="/home/local/ASURITE/ngong6/code/DIFFT/data/history/spectf_ldm/test_v2_256_100Rbest/model/vae.pt")
-parser.add_argument('--ldm_load_path', type=str, default="/home/local/ASURITE/ngong6/code/DIFFT/data/history/spectf_ldm/test_v2_256_100Rbest/model/ldm.pt")
+parser.add_argument('--vae_load_path', type=str, default="data/history/spectf_ldm/test_v2_256_100Rbest/model/vae.pt")
+parser.add_argument('--ldm_load_path', type=str, default="data/history/spectf_ldm/test_v2_256_100Rbest/model/ldm.pt")
 parser.add_argument('--prediction_type', type=str, default='epsilon')
 parser.add_argument('--snr_gamma', type=float, default=0)
 parser.add_argument('--loss_type', type=str, default='mse')
@@ -86,7 +86,6 @@ def pre_training(ldm, vae, training_data, validation_data, infer_data, args):
     best_acc = 0
     val_loss = 9999
     infer_acc = 0
-    # ldm.load_state_dict(torch.load("/home/local/ASURITE/ngong6/code/DIFFT/data/history/openml_586_ldm/v1_400vae/model/ldm_last.pt"))  # load the pre-trained ldm model
     optimizer = torch.optim.Adam(ldm.parameters(), lr=args.lr)
     for group in optimizer.param_groups:
         group["initial_lr"] = args.lr
@@ -317,7 +316,7 @@ def infer(vae, ldm, data, device, args):
                 new_df.to_csv(os.path.join(args.task_path, f'infer_{args.infer_func}_{args.max_seq_len}.csv'), index=False)
                 # print('----------------------------------') 
                 max_acc = new_acc
-    print_log(f'Infer Finished, Total Sample Time: {total_time:.4f} seconds, Single Sample Time: {(total_time/(i*args.batch_size)):.4f} seconds', args.task_path)
+    print_log(f'Infer Finished, Total Sample Time: {total_time:.4f} seconds, Single Sample Time: {(total_time/(i.item()*args.batch_size)):.4f} seconds', args.task_path)
     return max_acc
 
 def main():
