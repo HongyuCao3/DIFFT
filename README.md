@@ -11,7 +11,7 @@ python3 utils/datacollection/GRFG_with_nni.py --file-name DATASETNAME
 ```
 python3 main.py ---task_name DATASETNAME 
 ```
-### Step 2: VAE Training
+### Step 3: Diffusion Training
 ```
 python3 diffusion_main.py ---task_name DATASETNAME 
 ```

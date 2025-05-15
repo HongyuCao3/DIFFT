@@ -204,21 +204,8 @@ def pre_training(ldm, vae, training_data, validation_data, infer_data, args):
             'scheduler': scheduler.state_dict(),
             'best':{'best_val': best_val, 'best_acc': best_acc}, 
         }, os.path.join(args.model_path, f'checkpoint_last.pth'))
-        if epoch % 15 == 0 and epoch != 0 or epoch == 5 or (epoch >= args.pre_epochs - 200 and epoch % 10 == 0) or (epoch < 100 and epoch % 5 == 0 and epoch > 20):
-
-            args.max_seq_len = 256
-            infer_acc256 = infer(vae, ldm, infer_data, device, args)
-            args.max_seq_len = 512
-            infer_acc512 = infer(vae, ldm, infer_data, device, args)
+        if epoch % 10 == 0 and epoch != 0 :
             val_loss = valid(vae, ldm, validation_data, device, args, epoch)
-            if infer_acc256 > infer_acc512:
-                print_log(f"Training Epoch {epoch}: Loss: {(train_loss / (len(training_data) * args.batch_size)):.4f}, Infer Accuracy: {infer_acc256} (256)", args.task_path)
-                infer_acc = infer_acc256
-            else:
-                print_log(f"Training Epoch {epoch}: Loss: {(train_loss / (len(training_data) * args.batch_size)):.4f}, Infer Accuracy: {infer_acc512} (512)", args.task_path)
-                infer_acc = infer_acc512
-
-        if epoch % 40 == 0 and epoch > 0:
             torch.save(ldm.state_dict(), os.path.join(args.model_path, f'ldm_{epoch}.pt'))
             
         if val_loss < best_val:
@@ -226,18 +213,10 @@ def pre_training(ldm, vae, training_data, validation_data, infer_data, args):
             print_log(f"Training Epoch {epoch} get best val_loss {best_val},\
                 saving {os.path.join(args.model_path, f'ldm_best_val.pt')}", args.task_path)
             torch.save(ldm.state_dict(), os.path.join(args.model_path, f'ldm_best_val.pt'))
-        if infer_acc > best_acc:
-            best_acc = infer_acc
-            print_log(f"Training Epoch {epoch} get best infer_acc {infer_acc},\
-                saving {os.path.join(args.model_path, f'ldm_best_acc.pt')}", args.task_path)
-            torch.save(ldm.state_dict(), os.path.join(args.model_path, f'ldm_best_acc{epoch}.pt'))
     print_log(f"Total training time: {total_time:.2f} seconds, {(total_time/epoch):.2f} seconds per epoch", args.task_path)
-    infer_acc = infer(vae, ldm, infer_data, device, args)
     return vae
 
 def valid(vae, ldm, validation_data, device, args, epoch = 0):
-
-
     print_log(f'Validation Epoch [{epoch}] Start', args.task_path)
     pipeline = DiffTipeline(vae, DDPMScheduler(num_train_timesteps=1000, clip_sample=False, beta_start = 0.00085, beta_end = 0.012,\
         steps_offset = 1, rescale_betas_zero_snr = True, beta_schedule = "scaled_linear"), target_guidance=args.use_reward)
@@ -270,56 +249,6 @@ def valid(vae, ldm, validation_data, device, args, epoch = 0):
             loss += criterion(z_predict.float(), z0.float()).item()
     loss = loss / (len(validation_data) * args.batch_size)
     print_log(f'Validation Epoch [{epoch}] Loss: {loss:.4f}', args.task_path)
-    return loss
-
-def test(vae, ldm, validation_data, epoch, device, args):
-    """
-    test
-    """
-    ldm.load_state_dict(torch.load(args.ldm_load_path))
-    vae.eval()
-    ldm.eval()
-    pipeline = DiffTipeline(vae, DDPMScheduler(num_train_timesteps=1000, clip_sample=False, beta_start = 0.00085, beta_end = 0.012,\
-        steps_offset = 1, rescale_betas_zero_snr = True, beta_schedule = "scaled_linear"), target_guidance=10)
-    generator = torch.Generator(device="cuda").manual_seed(0)
-    
-    criterion = nn.MSELoss()
-    loss = 0
-    eva = 0
-
-    with torch.no_grad():
-        for i, batch in enumerate(validation_data):
-            seq = batch["seqs"].to(device)
-            tab = batch["tabs"].to(device)
-            performance = batch["performances"].to(device)
-            chunk = batch["chunk_seqs"]# .to(device)
-            
-            with torch.no_grad():
-                z0, mean, logvar, evaluation, seq_emb, tab_emb = vae.encode(seq,tab)
-                
-            # print("original:",evaluation[0].item(),evaluation[1].item(),evaluation[10].item())
-            # z0: 597,B_64,C_128  tab: B_64,C_128
-            z0 = z0.permute(1, 0, 2).contiguous()
-            if random.random() < 0.1 and args.guidance_scale > 0:
-                tab = torch.zeros_like(tab).float().to(device)
-            
-            cond = tab.unsqueeze(1)
-            
-            # z, mean, logvar, evaluation, seq_emb, tsab_emb = vae.encode(seq, tab)
-            z_predict, z_list, eva_out = pipeline(ldm, z0.shape, cond, steps=args.diff_num_step, generator=generator, guidance_scale=args.guidance_scale, device=device, use_reward=True)
-            # x = vae.decode(z0)
-            with torch.no_grad():
-                z_out = z_predict.permute(1, 0, 2).contiguous()
-                # output, chunk = vae.decode(z_out, chunk)
-
-            eva = eva + evaluation.sum().item()
-            loss += criterion(z_predict.float(), z0.float()).item()
-            # loss += criterion(output.float(), seq.float()).item()
-            if i % 5 == 0:
-                print_log(f"Testing Epoch [{epoch}] Batch [{i}/{len(validation_data)}] Loss: [{(loss / ((i+1) * args.batch_size)) :.4f}]", args.task_path)
-    loss = loss / (len(validation_data) * args.batch_size)
-    eva = eva / (len(validation_data) * args.batch_size)
-    print_log(f'Test Epoch [{epoch}] Loss: {loss:.4f}, Eva: {eva:.4f}', args.task_path)
     return loss
 
 def infer(vae, ldm, data, device, args):
