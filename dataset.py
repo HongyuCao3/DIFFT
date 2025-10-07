@@ -117,6 +117,34 @@ class CustomDataloader(DataLoader):
 
 class Data_Preprocessing(object):
     def __init__(self, task, task_type=None, dataset=None, batch_size=64, shuffle_time=10, infer_size=100, num_worker=10):
+        """ 初始化数据集与数据加载器。根据给定任务名称与可选数据集，完成数据读取/预处理、训练/验证集划分与持久化，并构建用于训练、验证与推理的自定义 Dataset 与 Dataloader。同时计算序列/词表等元信息以及按块切分相关的统计值。
+
+        该初始化流程包含以下步骤：
+
+        加载原始数据（来自传入的 DataFrame 或基于任务名从本地 HDF 文件读取），并进行缺失值填充、列重命名等预处理
+        自动推断或接收任务类型
+        在无历史缓存时按比例划分训练/测试集，并将 raw/train/test 写入本地 history 目录的 HDF 文件；存在缓存时直接读取
+        调用内部数据准备方法，获得训练/验证/推理所需的序列、表格特征与性能标签等张量/数组
+        基于 CustomDataset/CustomDataloader 构建训练、验证与推理数据加载器
+        计算并保存与按块切分相关的最大块大小与块数等统计
+        Args: 
+         - task (str): 任务名称。用于定位数据文件并作为 history 缓存的命名空间。 
+         - task_type (Optional[Any]): 任务类型。当为 None 时，将通过全局映射表根据 task 自动推断。 
+         - dataset (Optional[pandas.DataFrame]): 预先加载的数据集。若提供则跳过从本地 HDF 读取。 
+         - batch_size (int, optional): DataLoader 批大小，默认 64。 shuffle_time (int, optional): 训练阶段的打乱次数或相关策略参数，默认 10。 infer_size (int, optional): 推理集采样或批量相关的大小参数，默认 100。 num_worker (int, optional): DataLoader 的工作线程数量，默认 10。
+
+        Returns: None
+
+        Raises: FileNotFoundError: 当 dataset 未提供且基于任务名的 HDF 文件不存在时。 KeyError: 当 task_type 需自动推断而 task 不在任务映射表中时，或读取 HDF 指定键失败时。 OSError: 本地持久化（写入 history HDF 文件）失败时。 ValueError: 数据划分、特征选择或下游数据转换过程中收到非法参数或数据格式不符合预期时。 TypeError: 传入 dataset 的类型或列格式不符合预期导致的类型错误。
+
+        注:
+
+        会在本地 base_path/history/{task}.hdf 下读写 'raw'、'train'、'test' 三个键。
+        初始化后典型属性包括但不限于：
+        training_data、validation_data、infer_data：对应阶段的 DataLoader
+        train_seq/train_tab/train_perf、val_seq/val_tab/val_perf、infer_seq/infer_tab/infer_perf：数据张量/数组
+        input_size、max_length、vocab_size、tab_len：数据规模与元信息
+        max_chunk_size、max_chunk_num：按块切分的统计指标 """
         self.task_name = task
         self.batch_size = batch_size
         self.shuffle_time = shuffle_time
@@ -204,6 +232,34 @@ class Data_Preprocessing(object):
         return downstream_task_new(data, self.task_type)      
       
     def _get_data_from_local(self, file_base_path='./tmp'):
+        """ 从本地缓存或原始文件构建数据集
+
+        优先从缓存目录加载已处理的数据；若缓存不存在，则从本地原始数据文件解析序列、性能指标与表征特征，执行特征构建与数据拆分（训练/验证）及洗牌，生成推理集合，并将结果写入缓存。函数同时统计序列最大长度与词表大小。
+
+        注意：
+
+        缓存目录按任务名组织，包含训练、验证与推理三套数据（operation.list.pkl、performance.list.pkl、table.list.pkl 及其前缀 val_/infer_ 变体）。
+        原始数据按任务名子目录读取，依据外部标志选择后缀（.adata 或 .bdata）。
+        序列会基于分隔符进行段内归约与展开，训练/验证序列首尾分别添加起止标记（1 与 2）。
+        推理集合按性能排序选取前若干样本的序列与特征。
+        特征构建依赖类/实例方法与外部工具（如 Feature_GCN、split_list、show_ops、converge、op_post_seq 等）。
+        Args: file_base_path (str): 原始数据根目录路径（包含按任务名组织的子目录）。默认为 './tmp'。
+
+        Returns: tuple: 
+            - train_seq (list[list[int]]): 训练集操作序列（含起止标记）。 
+            - train_perf (list[list[float]]): 训练集性能指标列表（每条样本为长度为 1 的列表）。 
+            - train_tab (list[ArrayLike]): 训练集表征特征（由 Feature_GCN 产生，数组/张量等）。 
+            - max_length (int): 样本序列的最大长度（基于全量或缓存统计）。 
+            - vocab_size (int): 词表最大索引值（基于全量或缓存统计）。 
+            - val_seq (list[list[int]]): 验证集操作序列（含起止标记）。 
+            - val_perf (list[list[float]]): 验证集性能指标列表。 
+            - val_tab (list[ArrayLike]): 验证集表征特征。 
+            - infer_seq (list[list[int]]): 推理集合操作序列（不加起止标记，或依实现而定）。 
+            - infer_perf (list[list[float]]): 推理集合性能指标列表。 
+            - infer_tab (list[ArrayLike]): 推理集合表征特征。
+
+        Raises: FileNotFoundError: 原始数据目录或期望的原始数据文件不存在。 pickle.UnpicklingError: 从缓存读取 pickle 文件失败或缓存损坏。 ValueError: 原始数据解析过程中出现格式不符合预期的内容（如非整数/浮点转换失败）。 OSError: 读写缓存目录/文件时发生的系统级错误。 
+        """
         name = self.task_name
         opt_path = f'{base_path}/history/{self.task_name}'
         opt_file = f'operation.list.pkl'
@@ -374,6 +430,15 @@ class Data_Preprocessing(object):
             os.mkdir(f'{base_path}/history/{self.task_name}')
             
     def Feature_GCN(selef, X):
+        """ 基于特征间皮尔逊相关性的简易特征图卷积（GCN）聚合，生成每个样本的单维特征表示
+
+        该方法先计算输入特征矩阵各特征（列）之间的绝对相关系数矩阵，并在去除对角线后按列与行的总和进行归一化，再添加自环以形成加权邻接矩阵。
+        随后将原始特征矩阵与该权重矩阵相乘，并对结果在特征维度上取均值，从而得到每个样本的聚合特征。
+
+        Args: X (pandas.DataFrame): 特征矩阵，形状为 (n_samples, n_features)。每列表示一个特征，每行表示一个样本。
+
+        Returns: numpy.ndarray: 聚合后的样本级特征，形状为 (n_samples,)，对应每个样本的单一数值表示。 
+        """
         corr_matrix = X.corr().abs()
         if len(corr_matrix) == 1:
             W = corr_matrix

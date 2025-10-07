@@ -22,6 +22,16 @@ class MultiHeadedAttention(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, query, key, value, mask=None):
+        """ 执行多头注意力的前向传播。该过程包括将输入投影到多个头的子空间，计算缩放点积注意力， 然后将各头结果拼接并通过输出线性层映射回模型维度。
+
+        Args: 
+         - query (Tensor): 查询张量，形状为 (batch_size, query_len, d_model)。 
+         - key (Tensor): 键张量，形状为 (batch_size, key_len, d_model)。 
+         - value (Tensor): 值张量，形状为 (batch_size, value_len, d_model)。 
+         - mask (Tensor, optional): 注意力掩码，可广播到形状 (batch_size, num_heads, query_len, key_len)。默认值为 None。
+
+        Returns: Tensor: 多头注意力的输出，形状为 (batch_size, query_len, d_model)。 
+        """
         batch_size = query.size(0)
 
         # 1) Do all the linear projections in batch from d_model => h x d_k

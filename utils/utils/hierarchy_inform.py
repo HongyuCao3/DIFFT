@@ -9,6 +9,36 @@ sos : root 0
 
 class HierarchyStructure:
     def __init__(self, layers, applyindices, aim, iam, hidm, heidm):
+        """ 初始化层级标签信息与索引映射，用于构建按层次组织的全局/局部标签对照关系
+
+        该初始化过程会：
+
+        记录层数与每层的节点数量统计
+        依据输入索引与映射关系计算总节点数与特殊标记（起始/填充）
+        构建分层到全局标签的映射矩阵 hierarchical_label，其最后一层为全局身份映射（identity）
+        Args: 
+         - layers (int): 层级数（不包含附加的全局层）。 
+         - applyindices (Iterable[int]): 需要参与统计/映射的索引集合（应用节点索引）。 
+         - aim (Dict): applyid 到索引的映射（applyid_index_map）。 
+         - iam (Dict): 索引到 applyid 的映射（index_applyid_map）。 
+         - hidm (Dict[Any, Sequence[int]]): 局部（分层）标签映射，键为 applyid，值为包含层内局部标签 id 的序列（通常含首/末特殊标记）。 
+         - heidm (Dict[Any, Sequence[int]]): 全局标签映射，键为 applyid，值为对应的全局标签序列（与 hidm 对齐）。
+
+        Returns: None: 构造函数不返回值，但会初始化以下关键属性： 
+            - layer_num (int): 层数 
+            - num_per_layer (torch.LongTensor): 各层节点计数，形状为 [layer_num] 
+            - num_nodes (int): 全部节点（含特殊标记）数量 
+            - label_map (dict): 局部使用的标签索引缓存（初始化为空） 
+            - applyid_index_map (Dict): 入参 aim 的引用 
+            - index_applyid_map (Dict): 入参 iam 的引用 
+            - hierarchical_label (torch.LongTensor): 分层到全局标签映射矩阵，形状为 [layer_num + 1, num_nodes] 
+            - flat_init (bool): 是否已完成扁平化初始化标记 
+            - hierarchical_init (bool): 是否已完成层级初始化标记 
+            - sos_token (int): 起始标记 id（根节点） 
+            - pad_token (int): 填充标记 id
+
+        Raises: KeyError: 当在 heidm 或 iam 中查找缺失的 applyid/索引键时可能引发。 IndexError: 当写入 hierarchical_label 时索引越界可能引发。 ValueError: 当 hidm 与 heidm 的层级长度不一致或与 layers 不匹配时可能引发。 
+        """
         self.layer_num = layers
         self.num_per_layer = torch.zeros(self.layer_num,
                                          dtype=torch.long) + 1
