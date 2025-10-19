@@ -162,10 +162,10 @@ def pre_training(vae, training_data, validation_data, load_epoch):
             chunk_size_gt = (seq == 4).sum(dim=1) + 1
             tab = tab.to(device)
             performance = performance.to(device)
-            
+
             # 统计chunk_size_gt的分布
-            unique, counts = torch.unique(chunk_size_gt, return_counts=True) 
-            for u, c in zip(unique.cpu().numpy(), counts.cpu().numpy()): 
+            unique, counts = torch.unique(chunk_size_gt, return_counts=True)
+            for u, c in zip(unique.cpu().numpy(), counts.cpu().numpy()):
                 if u in chunk_size_gt_distribution:
                     chunk_size_gt_distribution[u] += c
                 else:
@@ -181,8 +181,8 @@ def pre_training(vae, training_data, validation_data, load_epoch):
             merged_target_seq_index = torch.cat(merged_target_seq_index, dim=0).to(
                 device
             )
-            merged_target_seq_index = merged_target_seq_index[:, 1:] # 去掉第一个token
-            reconstruction_loss = reconstruction_criterion(# 计算序列重构损失
+            merged_target_seq_index = merged_target_seq_index[:, 1:]  # 去掉第一个token
+            reconstruction_loss = reconstruction_criterion(  # 计算序列重构损失
                 logits.view(-1, logits.size(-1)),
                 merged_target_seq_index.contiguous().view(-1),
             )
@@ -203,9 +203,9 @@ def pre_training(vae, training_data, validation_data, load_epoch):
             if (i + 1) % args.accumulation_steps == 0 or (i + 1) == len(training_data):
                 optimizer.step()
                 optimizer.zero_grad()
-            chunk_pre = chunk_size.argmax(dim=1) # 预测的chunk_size
-            correct += (chunk_pre == chunk_size_gt).sum().item() # 预测正确的chunk_size
-            total_chunk += chunk_size_gt.size(0) # 总的样本数量
+            chunk_pre = chunk_size.argmax(dim=1)  # 预测的chunk_size
+            correct += (chunk_pre == chunk_size_gt).sum().item()  # 预测正确的chunk_size
+            total_chunk += chunk_size_gt.size(0)  # 总的样本数量
             total_reconstruction_loss += reconstruction_loss.item()
             total_performance_loss += performance_loss.item()
             total_kl_loss += kl_loss.item()
@@ -236,9 +236,9 @@ def pre_training(vae, training_data, validation_data, load_epoch):
 def valid(vae, validation_data, device):
     """在验证集上评估给定 VAE 模型对片段长度（chunk size）预测的准确率。函数会将模型置于评估模式，并在不计算梯度的上下文中迭代验证数据。对每个 batch，从序列张量中依据特定标记值统计得到真实片段长度（按每个序列中值等于 4 的标记数量加一），并与模型前向传播返回的 chunk_size 预测（通过 argmax 得到）进行对比，最终计算整体准确率。函数会打印并返回该准确率。
 
-    Args: 
-        vae (torch.nn.Module): 待评估的 VAE 模型。其前向传播需接受 (seq, tab, chunk) 并返回包含 chunk_size 在内的多个张量，其中 chunk_size 为按类别对片段长度的预测分布。 
-        validation_data (Iterable[Mapping[str, torch.Tensor]]): 可迭代的验证数据集或 DataLoader。每个 batch 需包含键 "seqs"、"tabs"、"performances"、"chunk_seqs" 对应的张量。 
+    Args:
+        vae (torch.nn.Module): 待评估的 VAE 模型。其前向传播需接受 (seq, tab, chunk) 并返回包含 chunk_size 在内的多个张量，其中 chunk_size 为按类别对片段长度的预测分布。
+        validation_data (Iterable[Mapping[str, torch.Tensor]]): 可迭代的验证数据集或 DataLoader。每个 batch 需包含键 "seqs"、"tabs"、"performances"、"chunk_seqs" 对应的张量。
         device (Union[torch.device, str]): 执行计算的设备，如 "cpu" 或 "cuda"。
 
     Returns: float: 模型在验证集上对片段长度预测的准确率，取值范围为 [0, 1]。

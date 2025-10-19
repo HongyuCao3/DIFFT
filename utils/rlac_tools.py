@@ -29,6 +29,27 @@ def relative_absolute_error(y_test, y_predict):
 
 
 def downstream_task_new(data, task_type, method='RF'):
+    """ 在给定特征与标签的数据集上，根据任务类型与可选方法进行下游建模与五折交叉验证评估，返回相应评价指标的平均得分。函数会将最后一列视为标签列（转换为 float），其余列作为特征，并将特征列统一重命名为 feature_0...feature_n。对于部分任务分支，训练前会将特征中的无穷值与 NaN 替换为 0。
+
+    支持的任务与评估方式：
+
+    分类任务（task_type='cls'）：可选方法包括
+    'SVC'：线性核支持向量机
+    'LR'：逻辑回归（max_iter=1000）
+    'DTC'：决策树
+    'KNC'：K 近邻分类器（k=5）
+    其他或默认：随机森林分类器 使用 StratifiedKFold(5) 进行分层五折交叉验证，返回 weighted F1 的平均值。
+    回归任务（task_type='reg'）：使用随机森林回归器，KFold(5) 交叉验证，返回 1 - RAE（相对绝对误差）的平均值。
+    二分类检测任务（task_type='det'）：使用 K 近邻分类器（k=5，n_jobs=128），StratifiedKFold(5) 交叉验证，返回 ROC-AUC 的平均值。
+    多标签/多类别任务（task_type='mcls'）：使用 One-vs-Rest 的随机森林分类器（n_jobs=128），StratifiedKFold(5) 交叉验证，返回 micro F1 的平均值。
+    排序任务（task_type='rank'）：未实现，返回 None。
+    其他不支持的任务类型：返回 -1。
+    Args: data (pandas.DataFrame): 输入数据表，最后一列为标签，可转换为 float；其余列为特征。 task_type (str): 任务类型，支持 'cls'、'reg'、'det'、'mcls'、'rank'。 method (str, optional): 分类任务的学习器选择，支持 'RF'（默认）、'SVC'、'LR'、'DTC'、'KNC'；对非分类任务忽略。
+
+    Returns: float | None | int: - 分类（'cls'）：加权 F1 的五折平均值。 - 回归（'reg'）：1 - RAE 的五折平均值。 - 检测（'det'）：ROC-AUC 的五折平均值。 - 多分类（'mcls'）：micro F1 的五折平均值。 - 排序（'rank'）：None（未实现）。 - 其他任务类型：-1。
+
+    备注: - 在分类与回归分支中，训练前会将特征中的无穷大与 NaN 替换为 0，以避免模型训练报错。 - 采用 5 折交叉验证（分层或普通），固定 random_state=0 且 shuffle=True（如适用），以获得稳定的平均指标。 
+    """
     X = data.iloc[:, :-1]
     X.columns = [f'feature_{i}' for i in range(X.shape[1])]
     y = data.iloc[:, -1].astype(float)
